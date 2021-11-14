@@ -1,19 +1,15 @@
-from fastapi import BackgroundTasks, FastAPI
-import requests
-from starlette.responses import Response
-# from deta import Deta  # Import Deta
-from deta import Deta
-from pandas import json_normalize
-import os
-import numpy as np
-
+from fastapi import BackgroundTasks, FastAPI, Body, applications
+# import db
+from mongodb import db
+import api
+from bson.json_util import dumps, loads
 
 app = FastAPI()
 
 
 @app.get("/")
 def read_root():
-    return request_api()
+    return api.request_api()
 
 
 @app.post("/put/rank/{api_name}")
@@ -26,34 +22,42 @@ def put_rank(api_name: str, background_tasks: BackgroundTasks):
 
 
 @app.get("/items/{item_id}")
-def read_item(item_id: int):
-    return {"item_id": item_id}
+async def read_item(item_id: str):
+    return db.get_item(item_id)
 
-
-def request_api():
-    url = "https://app.rakuten.co.jp/services/api/IchibaItem/Ranking/20170628"
-    id = os.environ.get('RAKUTEN_API_ID')
-    print(id)
-    params = {
-        'format': 'json',
-        'applicationId': id
-    }
-
-    response = requests.get(url, params)
-    return response.json()
-
-
-def putdb(json_result):
-    df = json_normalize(json_result['Items']).loc[:, [
-        'Item.affiliateRate', 'Item.catchcopy', 'Item.shopName', 'Item.itemUrl', 'Item.mediumImageUrls']]
-    items = df.to_dict(orient='records')
-    putdb(items)
-
-    deta = Deta()
-    db = deta.Base("products")
-    for item in items:
-        db.put(item)
-
+@app.get("/rank/{rank_num}")
+def read_rank(rank_num: int):
+    return db.get_rank(rank_num)
 
 def put_rakuten_rank():
-    items = request_api()
+    name = 'rakuten_rank'
+    db.put_request_log(name)
+    result = api.request_api()
+    db.put_rakuten_rank(result)
+
+
+@app.post('/')
+def create_post(body=Body(...)):
+    """postの作成
+
+    ----------
+    Parameters:
+
+    body: body
+        任意のjson
+    """
+    post = body['payload']
+    db.posts.insert(post)
+    return {'post': "ok"}
+
+@app.get('')
+def read_post():
+    """postの取得
+
+    ----------
+    Parameters:
+
+    なし
+    """
+    db_post = db.posts.find_one()
+    return {'item': dumps(db_post)}
